@@ -13,6 +13,12 @@ print_yellow() {
     echo -e "\033[0;33m$1\033[0m"
 }
 
+# Create necessary directories
+print_blue "Creating necessary directories..."
+mkdir -p tools
+mkdir -p user_files
+print_green "Directories created!"
+
 # Check if Python 3 is installed
 print_blue "Checking for Python 3..."
 if ! command -v python3 &> /dev/null; then

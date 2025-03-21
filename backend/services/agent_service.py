@@ -2,8 +2,6 @@ import os
 import time
 from typing import Dict, List, Generator, Any, Tuple
 
-
-
 from langchain.chat_models import init_chat_model
 
 from langchain_core.messages import HumanMessage, AIMessage
@@ -11,6 +9,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
 
 from backend.models.data_models import Message, Thread, ChatResponse, Metrics
+from backend.tools.sqlite_execute_query import execute_sqlite_query
+
 def mock_search_api(query:str):
     """Search Function
     arguments:
@@ -57,7 +57,7 @@ class SQLAgent:
         }
         
         # Combine tools
-        self.tools = [self.search]
+        self.tools = [self.search, execute_sqlite_query]
         
         # Create the agent with memory
         self.agent_executor = create_react_agent(
@@ -73,30 +73,67 @@ class SQLAgent:
         self.metrics = Metrics()
     
     def execute_sql(self, query: str, database: str = "default") -> str:
-        """Mock SQL execution function - this would connect to a real DB in production"""
-        # For testing purposes
-        time.sleep(0.5)  # Simulate DB query time
+        """
+        Execute a SQL query against the specified database.
+        Now uses the execute_sqlite_query tool internally.
+        """
+        # Get database path from configuration
+        db_config = config.get_section("query_db")
+        db_path = db_config.get("path", "user_files/query_database.db")
         
-        # Update metrics
-        self.metrics.performance.lastQueryTime = 500
-        self.metrics.performance.averageResponseTime = (
-            self.metrics.performance.averageResponseTime * 0.7 + 500 * 0.3
+        if database != "default" and os.path.exists(database):
+            db_path = database
+            
+        # Record start time for metrics
+        start_time = time.time()
+        
+        # Execute the query
+        result = execute_sqlite_query(
+            db_path=db_path,
+            query=query
         )
         
-        # Mock responses for different SQL query types
-        if "SELECT" in query.upper():
-            return "Query executed successfully. Returned 10 rows."
-        elif "CREATE TABLE" in query.upper():
-            table_name = query.split("CREATE TABLE")[1].strip().split()[0]
-            return f"Table {table_name} created successfully."
-        elif "INSERT" in query.upper():
-            return "Inserted 1 row successfully."
-        elif "UPDATE" in query.upper():
-            return "Updated 5 rows successfully."
-        elif "DELETE" in query.upper():
-            return "Deleted 2 rows successfully."
-        else:
-            return "Query executed successfully."
+        # Update metrics
+        response_time = int((time.time() - start_time) * 1000)
+        self.metrics.performance.lastQueryTime = response_time
+        self.metrics.performance.averageResponseTime = (
+            self.metrics.performance.averageResponseTime * 0.7 + response_time * 0.3
+        )
+        
+        # Format a user-friendly response
+        if result.get("error"):
+            return f"Error executing query: {result['error']}"
+        
+        response = ""
+        for query_result in result.get("results", []):
+            if query_result.get("is_select", True):
+                row_count = query_result.get("row_count", 0)
+                response += f"Query executed successfully. Returned {row_count} rows.\n"
+                
+                # Include sample of results if available
+                if row_count > 0:
+                    columns = query_result.get("columns", [])
+                    rows = query_result.get("rows", [])
+                    
+                    # Show column headers
+                    response += "\n| " + " | ".join(columns) + " |\n"
+                    response += "| " + " | ".join(["---"] * len(columns)) + " |\n"
+                    
+                    # Show up to 5 rows
+                    for row in rows[:5]:
+                        response += "| " + " | ".join([str(cell) for cell in row]) + " |\n"
+                    
+                    # Indicate if there are more rows
+                    if row_count > 5:
+                        response += f"\n... and {row_count - 5} more rows.\n"
+            else:
+                affected_rows = query_result.get("affected_rows", 0)
+                if affected_rows is not None:
+                    response += f"Query executed successfully. Affected {affected_rows} rows.\n"
+                else:
+                    response += "Query executed successfully.\n"
+        
+        return response
     
     def send_message(self, message_text: str, thread_id: str, user_id: str) -> ChatResponse:
         """Send a message to the agent and get a response"""

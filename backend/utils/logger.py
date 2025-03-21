@@ -24,11 +24,14 @@ def _get_level(level: Union[str, int]) -> int:
 def initialize_logger():
     """Initialize and configure the application-wide logger"""
     # Get configuration from config.yaml
-    log_level = config.get("logging", "level", "INFO")
-    log_format = config.get("logging", "format", "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s")
-    log_file = config.get("logging", "file", "logs/app.log")
-    max_size = config.get("logging", "max_size", 10485760)  # 10MB default
-    backup_count = config.get("logging", "backup_count", 5)
+    log_config = config.get_section("logging")
+    
+    log_level = log_config.get("level", "INFO")
+    log_format = log_config.get("format", "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s")
+    log_file = log_config.get("file", "tools/app.log")
+    max_size = log_config.get("max_size", 10485760)  # 10MB default
+    backup_count = log_config.get("backup_count", 5)
+    console_output = log_config.get("console", True)
     
     # Configure root logger
     root_logger = logging.getLogger("sql_matic")
@@ -38,24 +41,33 @@ def initialize_logger():
     # Set up formatter
     formatter = logging.Formatter(log_format)
     
-    # Add console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
+    # Add console handler if enabled in config
+    if console_output:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
     
     # Add file handler if log_file is specified
     if log_file:
         log_dir = os.path.dirname(log_file)
         if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+                print(f"Created log directory: {log_dir}")
+            except Exception as e:
+                print(f"Failed to create log directory {log_dir}: {str(e)}")
             
-        file_handler = RotatingFileHandler(
-            log_file, 
-            maxBytes=max_size, 
-            backupCount=backup_count
-        )
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
+        try:
+            file_handler = RotatingFileHandler(
+                log_file, 
+                maxBytes=max_size, 
+                backupCount=backup_count
+            )
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+            print(f"Logging to: {os.path.abspath(log_file)}")
+        except Exception as e:
+            print(f"Failed to set up file logging to {log_file}: {str(e)}")
     
     return root_logger
 

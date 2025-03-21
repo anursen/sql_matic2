@@ -218,6 +218,7 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
         logger.exception(f"WebSocket error: {str(e)}")
         manager.disconnect(websocket, thread_id)
 
+
 if __name__ == "__main__":
     # Get port from config or environment
     port = int(os.environ.get("PORT", config.get("app", "port", 8000)))
@@ -227,3 +228,5 @@ if __name__ == "__main__":
     
     # Run the app with uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    
+    

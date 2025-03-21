@@ -67,3 +67,27 @@ class GetSqliteSchemaResponse(BaseModel):
     database_schema: Dict[str, Any] = Field(..., description="The database schema information")
     tables: Optional[List[str]] = None
     error: Optional[str] = None
+
+class ExecuteSqliteQuery(BaseModel):
+    """Input for SQLite query execution tool"""
+    db_path: str = Field(description="Path to the SQLite database file")
+    query: str = Field(description="SQL query to execute")
+    params: Optional[Dict[str, Any]] = Field(default=None, description="Query parameters (for parameterized queries)")
+    max_rows: Optional[int] = Field(default=None, description="Maximum number of rows to return")
+
+class SqliteQueryResult(BaseModel):
+    """Result from a single SQLite query"""
+    columns: List[str] = []
+    rows: List[List[Any]] = []
+    row_count: int = 0
+    execution_time_ms: int = 0
+    affected_rows: Optional[int] = None
+    is_select: bool = True
+    sql_executed: str = ""
+
+class ExecuteSqliteQueryResponse(BaseModel):
+    """Response model for SQLite query execution"""
+    results: List[SqliteQueryResult] = []
+    error: Optional[str] = None
+    is_write_operation: bool = False
+    execution_time_ms: int = 0

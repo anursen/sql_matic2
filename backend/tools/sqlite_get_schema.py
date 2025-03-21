@@ -109,10 +109,17 @@ def get_sqlite_schema(db_path: str) -> Dict[str, Any]:
     """
     logger.info(f"Extracting schema from SQLite database: {db_path}")
     
+    # Create empty DatabaseStructure for error cases
+    empty_db_structure = DatabaseStructure(databases=[]).model_dump()
+    
     if not os.path.exists(db_path):
         error_msg = f"Database file not found: {db_path}"
         logger.error(error_msg)
-        return GetSqliteSchemaResponse(error=error_msg).model_dump()
+        return GetSqliteSchemaResponse(
+            database_schema=empty_db_structure,  # Add empty structure
+            tables=[],
+            error=error_msg
+        ).model_dump()
     
     conn = None
     try:
@@ -222,24 +229,21 @@ def get_sqlite_schema(db_path: str) -> Dict[str, Any]:
     except sqlite3.Error as e:
         error_msg = f"SQLite error: {str(e)}"
         logger.error(f"Failed to extract schema from {db_path}: {error_msg}")
-        return GetSqliteSchemaResponse(error=error_msg).model_dump()
+        return GetSqliteSchemaResponse(
+            database_schema=empty_db_structure,  # Add empty structure
+            tables=[],
+            error=error_msg
+        ).model_dump()
     except Exception as e:
         # Catch any other exceptions to prevent app failure
         error_msg = f"Unexpected error: {str(e)}"
         logger.exception(f"Unexpected error extracting schema from {db_path}")
-        return GetSqliteSchemaResponse(error=error_msg).model_dump()
+        return GetSqliteSchemaResponse(
+            database_schema=empty_db_structure,  # Add empty structure
+            tables=[],
+            error=error_msg
+        ).model_dump()
     finally:
         if conn:
             conn.close()
 
-if __name__ == "__main__":
-    # Example usage
-    db_path = input("Enter SQLite database path: ")
-    if not db_path:
-        db_path = '../user_files/sakila.db'
-    
-    # Call the function
-    schema_info = get_sqlite_schema(db_path)
-    
-    # Just print the result with minimal formatting
-    print(schema_info)

@@ -2,22 +2,21 @@
 
 # Application settings
 app:
-  name: SQL Matic
+  name: "SQL Matic"
   port: 8000
   debug: true
-  environment: development  # development, testing, production
+  environment: "development"
 
-# Database settings
+# Database settings for application
 database:
-  path: user_files/database.db
+  path: "sample.db"
   pool_size: 5
   timeout: 30
+  type: sqlite
 
 # Query Database settings
 query_db:
-  type: sqlite  # sqlite, mysql, postgresql, etc.
-  path: user_files/query_database.db  # For SQLite
-  connection_string: ""  # For other database types
+  path: "../user_files/sakila.db"
   max_rows_return: 1000
   timeout: 30
   enable_write: false  # Whether to allow write operations
@@ -34,25 +33,19 @@ api:
 
 # CORS settings
 cors:
-  origins:
-    - "*"  # In production, specify exact origins
+  origins: ["*"]
   credentials: true
-  methods:
-    - GET
-    - POST
-    - PUT
-    - DELETE
-  headers:
-    - Content-Type
-    - Authorization
+  methods: ["*"]
+  headers: ["*"]
 
 # Logging configuration
 logging:
-  level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: logs/app.log
-  max_size: 10485760  # 10MB
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
+  file: "tools/app.log"  # Centralized log location
+  max_size: 10485760  # 10MB in bytes
   backup_count: 5
+  console: true  # Whether to output logs to console
 
 # Agent settings
 agent:
@@ -73,7 +66,7 @@ security:
 # Storage settings
 storage:
   user_files_dir: user_files
-  max_upload_size: 10485760  # 10MB
+  max_upload_size: 104857600  # 100MB
   allowed_extensions:
     - .db
     - .sqlite

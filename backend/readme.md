@@ -50,8 +50,3 @@ The ChatBot Backend is designed to provide a scalable and efficient service that
 - **ASGI Server:** Uvicorn (for FastAPI)
 - **Containerization:** Docker & Docker Compose (optional)
 
----
-
-
----
-
