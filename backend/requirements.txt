@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+langchain
+langchain-core
+langchain-community
+langgraph
+langgraph-checkpoint-sqlite
+python-dotenv
+websockets
+sqlalchemy
+requests
+langchain-openai
