@@ -1,225 +1,114 @@
-import os
-import time
-from typing import Dict, List, Generator, Any, Tuple
+import importlib
+from typing import Dict, List, Generator, Tuple, Optional, Any
 
-from langchain.chat_models import init_chat_model
+from backend.agents import BaseAgent, SQLAgentImpl
+from backend.models.data_models import ChatResponse
+from backend.utils import logger
+from backend.config.config import config
 
-from langchain_core.messages import HumanMessage, AIMessage
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
-
-from backend.models.data_models import Message, Thread, ChatResponse, Metrics
-from backend.tools.sqlite_execute_query import execute_sqlite_query
-
-def mock_search_api(query:str):
-    """Search Function
-    arguments:
-        max_results: Maximum number of search results to return
-        """
-    query = "example query"
-    # Simulate search results
-    return [f"Result {query} for query '{query}'"]
-
-class SQLAgent:
-    """SQL Agent Service that wraps a LangChain agent"""
+class AgentService:
+    """Service that manages agent instances and routes requests to the appropriate agent"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(AgentService, cls).__new__(cls)
+            cls._instance._initialized = False
+            cls._instance._agents = {}
+            cls._instance._active_agent = None
+        return cls._instance
     
     def __init__(self):
-        # Initialize memory for persistent threads
-        self.memory = MemorySaver()
-        
-        # Initialize the LLM
-        self.model = init_chat_model("gpt-4", model_provider="openai")
-        
-        # Initialize tools
-        self.search = mock_search_api(query='2')
-        
-        # Create a SQL tool (this would be expanded in a real implementation)
-        self.sql_tool = {
-            "type": "function",
-            "function": {
-                "name": "execute_sql",
-                "description": "Execute a SQL query against a database",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The SQL query to execute"
-                        },
-                        "database": {
-                            "type": "string",
-                            "description": "The database to query against"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        }
-        
-        # Combine tools
-        self.tools = [self.search, execute_sqlite_query]
-        
-        # Create the agent with memory
-        self.agent_executor = create_react_agent(
-            self.model, 
-            self.tools, 
-            checkpointer=self.memory
-        )
-        
-        # Thread storage
-        self.threads: Dict[str, Thread] = {}
-        
-        # Metrics
-        self.metrics = Metrics()
-    
-    def execute_sql(self, query: str, database: str = "default") -> str:
-        """
-        Execute a SQL query against the specified database.
-        Now uses the execute_sqlite_query tool internally.
-        """
-        # Get database path from configuration
-        db_config = config.get_section("query_db")
-        db_path = db_config.get("path", "user_files/query_database.db")
-        
-        if database != "default" and os.path.exists(database):
-            db_path = database
+        if self._initialized:
+            return
             
-        # Record start time for metrics
-        start_time = time.time()
+        logger.info("Initializing Agent Service")
         
-        # Execute the query
-        result = execute_sqlite_query(
-            db_path=db_path,
-            query=query
-        )
+        # Register built-in agents
+        self.register_agent("sql", SQLAgentImpl())
         
-        # Update metrics
-        response_time = int((time.time() - start_time) * 1000)
-        self.metrics.performance.lastQueryTime = response_time
-        self.metrics.performance.averageResponseTime = (
-            self.metrics.performance.averageResponseTime * 0.7 + response_time * 0.3
-        )
+        # Set the active agent based on configuration
+        agent_type = config.get("agent", "type", "sql")
+        self.set_active_agent(agent_type)
         
-        # Format a user-friendly response
-        if result.get("error"):
-            return f"Error executing query: {result['error']}"
-        
-        response = ""
-        for query_result in result.get("results", []):
-            if query_result.get("is_select", True):
-                row_count = query_result.get("row_count", 0)
-                response += f"Query executed successfully. Returned {row_count} rows.\n"
-                
-                # Include sample of results if available
-                if row_count > 0:
-                    columns = query_result.get("columns", [])
-                    rows = query_result.get("rows", [])
-                    
-                    # Show column headers
-                    response += "\n| " + " | ".join(columns) + " |\n"
-                    response += "| " + " | ".join(["---"] * len(columns)) + " |\n"
-                    
-                    # Show up to 5 rows
-                    for row in rows[:5]:
-                        response += "| " + " | ".join([str(cell) for cell in row]) + " |\n"
-                    
-                    # Indicate if there are more rows
-                    if row_count > 5:
-                        response += f"\n... and {row_count - 5} more rows.\n"
-            else:
-                affected_rows = query_result.get("affected_rows", 0)
-                if affected_rows is not None:
-                    response += f"Query executed successfully. Affected {affected_rows} rows.\n"
-                else:
-                    response += "Query executed successfully.\n"
-        
-        return response
+        self._initialized = True
+        logger.info("Agent Service initialized successfully")
     
-    def send_message(self, message_text: str, thread_id: str, user_id: str) -> ChatResponse:
-        """Send a message to the agent and get a response"""
-        # Create config with thread_id for memory
-        config = {"configurable": {"thread_id": thread_id}}
-        
-        # Record start time for metrics
-        start_time = time.time()
-        
-        # Create a human message
-        human_message = HumanMessage(content=message_text)
-        
-        # Invoke the agent
-        response = self.agent_executor.invoke(
-            {"messages": [human_message]},
-            config
-        )
-        
-        # Calculate response time
-        response_time = int((time.time() - start_time) * 1000)
-        
-        # Update metrics
-        self.metrics.performance.lastQueryTime = response_time
-        self.metrics.performance.averageResponseTime = (
-            self.metrics.performance.averageResponseTime * 0.7 + response_time * 0.3
-        )
-        self.metrics.tokenUsage.prompt += 10  # This would be actual token count
-        self.metrics.tokenUsage.completion += 20  # This would be actual token count
-        self.metrics.tokenUsage.total = self.metrics.tokenUsage.prompt + self.metrics.tokenUsage.completion
-        
-        # Extract the response text
-        ai_message = response["messages"][-1]
-        response_text = ai_message.content
-        
-        # Create a response object
-        chat_response = ChatResponse(
-            text=response_text
-        )
-        
-        return chat_response
+    def register_agent(self, agent_id: str, agent: BaseAgent) -> None:
+        """Register an agent with the service"""
+        self._agents[agent_id] = agent
+        logger.info(f"Registered agent: {agent_id} ({agent.name})")
     
-    def stream_message(self, message_text: str, thread_id: str, user_id: str) -> Generator[Tuple[str, dict], None, None]:
-        """Stream a message response from the agent"""
-        # Create config with thread_id for memory
-        config = {"configurable": {"thread_id": thread_id}}
-        
-        # Record start time for metrics
-        start_time = time.time()
-        
-        # Create a human message
-        human_message = HumanMessage(content=message_text)
-        
-        # Add a typing indicator
-        yield "typing", {"isTyping": True, "threadId": thread_id}
-        
-        # Stream the agent response
-        for step in self.agent_executor.stream(
-            {"messages": [human_message]},
-            config,
-            stream_mode="values"
-        ):
-            # Get the latest message
-            latest_message = step["messages"][-1]
-            
-            # If it's an AI message, yield it
-            if isinstance(latest_message, AIMessage):
-                yield "message", {
-                    "text": latest_message.content,
-                    "sender": "bot",
-                    "userId": "SQL-Bot",
-                    "timestamp": time.time(),
-                    "threadId": thread_id
-                }
-        
-        # Calculate response time and update metrics
-        response_time = int((time.time() - start_time) * 1000)
-        self.metrics.performance.lastQueryTime = response_time
-        self.metrics.performance.averageResponseTime = (
-            self.metrics.performance.averageResponseTime * 0.7 + response_time * 0.3
-        )
-        
-        # Remove typing indicator
-        yield "typing", {"isTyping": False, "threadId": thread_id}
-        
-        # Yield metrics update
-        yield "metrics_update", {"metrics": self.metrics.dict()}
+    def get_agent(self, agent_id: str) -> Optional[BaseAgent]:
+        """Get an agent by ID"""
+        return self._agents.get(agent_id)
+    
+    def set_active_agent(self, agent_id: str) -> bool:
+        """Set the active agent by ID"""
+        if agent_id in self._agents:
+            self._active_agent = self._agents[agent_id]
+            logger.info(f"Active agent set to: {agent_id} ({self._active_agent.name})")
+            return True
+        else:
+            logger.error(f"Agent not found: {agent_id}")
+            # Fall back to the first available agent
+            if self._agents:
+                first_agent_id = next(iter(self._agents))
+                self._active_agent = self._agents[first_agent_id]
+                logger.warning(f"Falling back to agent: {first_agent_id}")
+                return True
+            return False
+    
+    @property
+    def active_agent(self) -> Optional[BaseAgent]:
+        """Get the currently active agent"""
+        return self._active_agent
+    
+    def get_available_agents(self) -> List[Dict[str, str]]:
+        """Get a list of all available agents"""
+        return [
+            {"id": agent_id, "name": agent.name, "description": agent.description}
+            for agent_id, agent in self._agents.items()
+        ]
+    
+    # Core methods that pass through to the active agent
+    
+    def send_message(self, message_text: str, thread_id: str, user_id: str, 
+                     system_message: Optional[str] = None) -> ChatResponse:
+        """Send a message using the active agent"""
+        if not self._active_agent:
+            raise ValueError("No active agent available")
+        return self._active_agent.send_message(message_text, thread_id, user_id, system_message)
+    
+    def stream_message(self, message_text: str, thread_id: str, user_id: str,
+                       system_message: Optional[str] = None) -> Generator[Tuple[str, dict], None, None]:
+        """Stream a message response from the active agent"""
+        if not self._active_agent:
+            raise ValueError("No active agent available")
+        yield from self._active_agent.stream_message(message_text, thread_id, user_id, system_message)
+    
+    def get_thread(self, thread_id: str) -> Any:
+        """Get a thread from the active agent"""
+        if not self._active_agent:
+            return None
+        return self._active_agent.get_thread(thread_id)
+    
+    def get_threads(self, user_id: Optional[str] = None) -> List[Any]:
+        """Get threads from the active agent"""
+        if not self._active_agent:
+            return []
+        return self._active_agent.get_threads(user_id)
+    
+    def delete_thread(self, thread_id: str) -> bool:
+        """Delete a thread using the active agent"""
+        if not self._active_agent:
+            return False
+        return self._active_agent.delete_thread(thread_id)
+
 
 # Create a singleton instance
-sql_agent = SQLAgent()
+agent_service = AgentService()
+
+# For backward compatibility
+sql_agent = agent_service

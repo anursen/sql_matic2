@@ -3,7 +3,7 @@ import os
 import sys
 import time
 import re
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 from langchain_core.tools import tool
 
 # Add parent directory to path to ensure imports work correctly
@@ -48,6 +48,7 @@ except ImportError as e:
         logger = console_logger
         
         # Define minimal versions of required classes following the same models
+        @tool
         class SqliteExecuteQuery:
             def __init__(self, db_path, query, params=None, max_rows=None):
                 self.db_path = db_path

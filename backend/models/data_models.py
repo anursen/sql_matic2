@@ -91,3 +91,51 @@ class ExecuteSqliteQueryResponse(BaseModel):
     error: Optional[str] = None
     is_write_operation: bool = False
     execution_time_ms: int = 0
+
+# Performance metrics models
+class PerformanceMetrics(BaseModel):
+    lastQueryTime: int = 0  # in milliseconds
+    averageResponseTime: float = 0  # in milliseconds
+    
+class TokenUsageMetrics(BaseModel):
+    prompt: int = 0
+    completion: int = 0
+    total: int = 0
+
+class Metrics(BaseModel):
+    performance: PerformanceMetrics = Field(default_factory=PerformanceMetrics)
+    tokenUsage: TokenUsageMetrics = Field(default_factory=TokenUsageMetrics)
+
+    def dict(self, *args, **kwargs):
+        """Override dict method to ensure nested objects are also converted to dicts"""
+        result = super().dict(*args, **kwargs)
+        return result
+
+# Message and Thread models for agent conversations
+class Message(BaseModel):
+    id: str
+    text: str
+    sender: str  # "user" or "bot"
+    user_id: str
+    timestamp: float
+    
+class Thread(BaseModel):
+    id: str
+    user_id: str
+    messages: List[Message] = []
+    created_at: float
+    updated_at: float
+
+# API Request/Response models
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: Optional[str] = None
+    user_id: str
+
+class ChatResponse(BaseModel):
+    text: str
+    metrics: Optional[Metrics] = None
+    thread_id: Optional[str] = None
+
+class CreateThreadRequest(BaseModel):
+    user_id: str
