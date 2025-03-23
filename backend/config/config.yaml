@@ -17,12 +17,11 @@ database:
 # Query Database settings
 query_db:
   path: "../user_files/sakila.db"
-  max_rows_return: 1000
+  max_rows_return: 50
   timeout: 30
   enable_write: false  # Whether to allow write operations
   allowed_tables: []  # Empty list means all tables
   excluded_tables: []  # Tables to exclude from queries
-  sample_rows: 5  # Number of sample rows to show in schema info
   cache_schema: true
   cache_duration: 3600  # Cache duration in seconds
 

@@ -1,33 +1,6 @@
-
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
-class GetSqliteSchemaResponse(BaseModel):
-    """Output for SQLite schema extraction tool"""
-    database_schema: Dict[str, Any] = Field(..., description="The database schema information")
-    tables: Optional[List[str]] = None
-    error: Optional[str] = None
-
-class ExecuteSqliteQuery(BaseModel):
-    """Input for SQLite query execution tool"""
-    query: str = Field(description="SQL query to execute")
-
-class SqliteQueryResult(BaseModel):
-    """Result from a single SQLite query"""
-    columns: List[str] = []
-    rows: List[List[Any]] = []
-    row_count: int = 0
-    execution_time_ms: int = 0
-    affected_rows: Optional[int] = None
-    is_select: bool = True
-    sql_executed: str = ""
-
-class ExecuteSqliteQueryResponse(BaseModel):
-    """Response model for SQLite query execution"""
-    results: List[SqliteQueryResult] = []
-    error: Optional[str] = None
-    is_write_operation: bool = False
-    execution_time_ms: int = 0
 
 # Performance metrics models
 class PerformanceMetrics(BaseModel):
@@ -76,6 +49,10 @@ class ChatResponse(BaseModel):
 
 class CreateThreadRequest(BaseModel):
     user_id: str
+
+
+
+
 
 
 #Sqlite Metadata models
@@ -143,3 +120,24 @@ class GetSqliteSchemaResponse(BaseModel):
     database_path: str = Field(description="Path to the SQLite database file")
     tables: List[TableInfo] = Field(default_factory=list, description="List of tables in the database")
     error: Optional[str] = Field(None, description="Error message if schema extraction failed")
+
+
+class ExecuteSqliteQuery(BaseModel):
+    """Input for SQLite query execution tool"""
+    query: str = Field(description="SQL query to execute")
+
+class SqliteQueryResult(BaseModel):
+    """Result from a single SQLite query"""
+    columns: List[str] = []
+    rows: List[List[Any]] = []
+    row_count: int = 0
+    execution_time_ms: int = 0
+    affected_rows: Optional[int] = None
+    is_select: bool = True
+    sql_executed: str = ""
+class ExecuteSqliteQueryResponse(BaseModel):
+    """Response model for SQLite query execution"""
+    results: List[SqliteQueryResult] = []
+    error: Optional[str] = None
+    is_write_operation: bool = False
+    execution_time_ms: int = 0
