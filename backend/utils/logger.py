@@ -1,12 +1,22 @@
 import logging
 import sys
+import os
+from pathlib import Path
+
+# Define log directory and file
+log_dir = Path("/Users/anursen/Documents/sql_matic2/logs")
+log_file = log_dir / "sql_matic.log"
+
+# Create logs directory if it doesn't exist
+os.makedirs(log_dir, exist_ok=True)
 
 # Configure the root logger
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(log_file)
     ]
 )
 
