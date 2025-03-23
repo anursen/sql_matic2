@@ -10,11 +10,6 @@ from pathlib import Path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, parent_dir)
 
-# Add the project root to the Python path
-project_root = Path(__file__).parent.parent  # This points to /backend directory
-sys.path.append(str(project_root))
-
-# Now the import should work
 from models.data_models import SqliteGetMetadataArgs, SQLiteGetMetadataResponse, DatabaseStats
 
 # Determine whether we're imported or run directly

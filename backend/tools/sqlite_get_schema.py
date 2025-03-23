@@ -1,249 +1,112 @@
 import sqlite3
-import os
 import sys
-import logging
-from typing import Dict, List, Any
+import os
 from langchain_core.tools import tool
-
-# Configure a standalone logger for direct execution
-def setup_standalone_logger():
-    logger = logging.getLogger("sqlite_schema")
-    if not logger.handlers:  # Only add handler if not already configured
-        logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s"))
-        logger.addHandler(handler)
-    return logger
 
 # Add parent directory to path to ensure imports work correctly
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, parent_dir)
 
-# Determine whether we're imported or run directly
-is_imported = __name__ != "__main__"
 
-try:
-    # First try importing relative to backend root
-    if is_imported:
-        from models.data_models import Column, Table, Database, DatabaseStructure, GetSqliteMetadata, GetSqliteSchemaResponse
-        from backend.utils import logger
-    else:
-        from backend.models.data_models import Column, Table, Database, DatabaseStructure, GetSqliteMetadata, GetSqliteSchemaResponse
-        # When run directly, use standalone logger
-        logger = setup_standalone_logger()
-except ImportError as e:
-    try:
-        # Try alternative import paths
-        sys.path.insert(0, os.path.dirname(parent_dir))  # Go up one more level
-        from backend.models.data_models import Column, Table, Database, DatabaseStructure, GetSqliteMetadata, GetSqliteSchemaResponse
-        from backend.utils import logger
-    except ImportError:
-        # Final fallback - define minimal versions of what we need
-        print(f"Warning: Could not import models, using simplified versions. Error: {e}")
-        
-        # Define minimal versions of required classes
-        class Column(dict):
-            def __init__(self, name, type, primary_key=False, foreign_key=False, references=None):
-                self.update({"name": name, "type": type, "primary_key": primary_key, 
-                             "foreign_key": foreign_key, "references": references})
-            
-            def model_dump(self):
-                return dict(self)
-                
-        class Table(dict):
-            def __init__(self, name, columns):
-                self.update({"name": name, "columns": columns})
-            
-            def model_dump(self):
-                return dict(self)
-                
-        class Database(dict):
-            def __init__(self, name, tables):
-                self.update({"name": name, "tables": tables})
-            
-            def model_dump(self):
-                return dict(self)
-                
-        class DatabaseStructure(dict):
-            def __init__(self, databases):
-                self.update({"databases": databases})
-            
-            def model_dump(self):
-                return dict(self)
-                
-        class GetSqliteMetadata(dict):
-            db_path: str
-            
-        class GetSqliteSchemaResponse(dict):
-            def __init__(self, database_schema=None, tables=None, error=None):
-                data = {}
-                if database_schema is not None:
-                    data["database_schema"] = database_schema
-                if tables is not None:
-                    data["tables"] = tables
-                if error is not None:
-                    data["error"] = error
-                self.update(data)
-            
-            def model_dump(self):
-                return dict(self)
-        
-        # Create standalone logger
-        logger = setup_standalone_logger()
+# Import configuration and logging
+from config.config import config
+from utils.logger import logger
+from models.data_models import GetSqliteSchemaRequest, GetSqliteSchemaResponse, TableInfo, ColumnInfo
 
-# Add a try-except block to handle urllib3 warning
-try:
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.NotOpenSSLWarning)
-except (ImportError, AttributeError):
-    pass
 
-@tool(args_schema=GetSqliteMetadata)
-def get_sqlite_schema(db_path: str) -> Dict[str, Any]:
+@tool(args_schema=GetSqliteSchemaRequest)
+def get_sqlite_schema(table_count: int = 0) -> GetSqliteSchemaResponse:
     """
     Extracts the complete schema information from a SQLite database.
-    args:
-        db_path: Path to the SQLite database file
-    returns:
-        A dictionary containing the database schema information
+    
+    Args:
+        table_count: Limit the number of tables to return (0 for all)
+        
+    Returns:
+        A structured response containing the database schema information
     """
-    logger.info(f"Extracting schema from SQLite database: {db_path}")
-    
-    # Create empty DatabaseStructure for error cases
-    empty_db_structure = DatabaseStructure(databases=[]).model_dump()
-    
-    if not os.path.exists(db_path):
-        error_msg = f"Database file not found: {db_path}"
-        logger.error(error_msg)
-        return GetSqliteSchemaResponse(
-            database_schema=empty_db_structure,  # Add empty structure
-            tables=[],
-            error=error_msg
-        ).model_dump()
-    
-    conn = None
     try:
+        db_path = config.get("query_db", "path")
+        logger.info(f"Extracting schema from SQLite database: {db_path}")
+        
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Query to get all database objects
-        cursor.execute("""
-            SELECT type, name FROM sqlite_master 
-            WHERE type IN ('table', 'view')
-            ORDER BY type, name;
-        """)
+        # Get all tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        all_tables = [row[0] for row in cursor.fetchall()]
         
-        all_objects = cursor.fetchall()
-        database_name = os.path.basename(db_path)
-        tables = []
-        table_names = []
+        # Limit table count if specified
+        tables_to_process = all_tables
+        if table_count > 0:
+            tables_to_process = all_tables[:table_count]
         
-        # Create dictionary to track all foreign keys
-        fk_map = {}
+        schema_info = GetSqliteSchemaResponse(database_path=db_path)
         
-        # First pass: collect all foreign keys
-        for obj_type, obj_name in all_objects:
-            if obj_type == 'table':
-                try:
-                    cursor.execute(f"PRAGMA foreign_key_list('{obj_name}');")
-                    fks = cursor.fetchall()
-                    
-                    for fk in fks:
-                        from_col = fk[3]  # local column
-                        to_table = fk[2]  # referenced table
-                        to_col = fk[4]    # referenced column
-                        
-                        # Store in format: {table.column: referenced_table.referenced_column}
-                        fk_map[f"{obj_name}.{from_col}"] = f"{to_table}.{to_col}"
-                except sqlite3.Error as e:
-                    # Just log and continue if we can't get foreign keys
-                    logger.warning(f"Could not retrieve foreign keys for table '{obj_name}': {str(e)}")
-        
-        # Second pass: build schema
-        for obj_type, obj_name in all_objects:
-            if obj_type == 'table' or obj_type == 'view':
-                table_names.append(obj_name)
+        # Process each table
+        for table_name in tables_to_process:
+            table_info = TableInfo(name=table_name)
+            
+            # Get column information
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns_data = cursor.fetchall()
+            
+            # Get foreign key information
+            cursor.execute(f"PRAGMA foreign_key_list({table_name})")
+            fk_data = cursor.fetchall()
+            
+            # Create a mapping of column names to their foreign key info
+            fk_map = {}
+            for fk in fk_data:
+                # Foreign key data: id, seq, table, from, to, on_update, on_delete, match
+                fk_map[fk[3]] = (fk[2], fk[4])  # (ref_table, ref_column)
+            
+            # Process column information
+            for col in columns_data:
+                # Column data: cid, name, type, notnull, dflt_value, pk
+                col_name = col[1]
+                col_type = col[2]
+                is_pk = col[5] == 1
                 
-                # Get column information
-                try:
-                    cursor.execute(f"PRAGMA table_info('{obj_name}');")
-                    columns_data = cursor.fetchall()
-                    
-                    columns = []
-                    
-                    for col in columns_data:
-                        col_id, name, data_type, notnull, default_val, is_pk = col
-                        
-                        # Check if this column is a foreign key
-                        fk_key = f"{obj_name}.{name}"
-                        is_fk = fk_key in fk_map
-                        fk_reference = None
-                        
-                        if is_fk:
-                            ref = fk_map[fk_key].split(".")
-                            fk_reference = {
-                                "table": ref[0],
-                                "column": ref[1]
-                            }
-                        
-                        # Create Column object with simplified information
-                        column = Column(
-                            name=name,
-                            type=data_type,
-                            primary_key=bool(is_pk),
-                            foreign_key=is_fk,
-                            references=fk_reference
-                        )
-                        
-                        columns.append(column)
-                    
-                    # Create Table object with columns
-                    table = Table(
-                        name=obj_name,
-                        columns=columns
-                    )
-                    
-                    tables.append(table.model_dump())
-                except sqlite3.Error as e:
-                    # Log error and continue with next table
-                    logger.error(f"Error processing table '{obj_name}': {str(e)}")
-                    continue
+                is_fk = col_name in fk_map
+                references = None
+                
+                if is_fk:
+                    ref_table, ref_column = fk_map[col_name]
+                    references = f"{ref_table}.{ref_column}"
+                
+                column_info = ColumnInfo(
+                    name=col_name,
+                    data_type=col_type,
+                    is_primary_key=is_pk,
+                    is_foreign_key=is_fk,
+                    references=references
+                )
+                
+                table_info.columns.append(column_info)
+            
+            schema_info.tables.append(table_info)
         
-        # Create Database with tables
-        database = Database(
-            name=database_name,
-            tables=tables
-        )
-        
-        # Create DatabaseStructure
-        db_structure = DatabaseStructure(databases=[database.model_dump()])
-        
-        logger.info(f"Successfully extracted schema from {db_path}: {len(tables)} tables found")
-        
-        # Return response
-        return GetSqliteSchemaResponse(
-            database_schema=db_structure.model_dump(),
-            tables=table_names
-        ).model_dump()
-        
-    except sqlite3.Error as e:
-        error_msg = f"SQLite error: {str(e)}"
-        logger.error(f"Failed to extract schema from {db_path}: {error_msg}")
-        return GetSqliteSchemaResponse(
-            database_schema=empty_db_structure,  # Add empty structure
-            tables=[],
-            error=error_msg
-        ).model_dump()
+        conn.close()
+        return schema_info
+    
     except Exception as e:
-        # Catch any other exceptions to prevent app failure
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.exception(f"Unexpected error extracting schema from {db_path}")
+        logger.error(f"Error extracting SQLite schema: {str(e)}")
         return GetSqliteSchemaResponse(
-            database_schema=empty_db_structure,  # Add empty structure
-            tables=[],
-            error=error_msg
-        ).model_dump()
-    finally:
-        if conn:
-            conn.close()
+            database_path=config.get("query_db", "path", fallback="unknown"),
+            error=str(e)
+        )
 
+
+if __name__ == "__main__":
+    # Example standalone usage
+    result = get_sqlite_schema.invoke({'table_count':0})  # Change table_count as needed
+    
+    # Print the schema in the requested format
+    for table in result.tables:
+        print(f"\nTable: {table.name}")
+        print("-" * 60)
+        for column in table.columns:
+            fk_info = f" FK [{column.references}]" if column.is_foreign_key else ""
+            pk_info = " PK" if column.is_primary_key else ""
+            print(f"{column.name} {column.data_type}{pk_info}{fk_info}")

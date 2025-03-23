@@ -116,3 +116,30 @@ class SQLiteGetMetadataResponse(BaseModel):
 
 class SqliteGetMetadataArgs(BaseModel):
     table_count: int = Field(default=0, description="Maximum number of tables to return metadata for (0 for all tables)")
+
+
+#Sqlite Get Schema models
+class GetSqliteSchemaRequest(BaseModel):
+    """Request model for the SQLite schema extraction tool."""
+    table_count: int = Field(default=0, description="Limit the number of tables to return (0 for all)")
+
+class ColumnInfo(BaseModel):
+    """Information about a database column."""
+    name: str = Field(description="Name of the column")
+    data_type: str = Field(description="SQL data type of the column")
+    is_primary_key: bool = Field(description="Whether the column is a primary key")
+    is_foreign_key: bool = Field(description="Whether the column is a foreign key")
+    references: Optional[str] = Field(None, description="Reference information (table.column) if foreign key")
+
+
+class TableInfo(BaseModel):
+    """Information about a database table."""
+    name: str = Field(description="Name of the table")
+    columns: List[ColumnInfo] = Field(default_factory=list, description="List of columns in the table")
+
+
+class GetSqliteSchemaResponse(BaseModel):
+    """Response model for the SQLite schema extraction tool."""
+    database_path: str = Field(description="Path to the SQLite database file")
+    tables: List[TableInfo] = Field(default_factory=list, description="List of tables in the database")
+    error: Optional[str] = Field(None, description="Error message if schema extraction failed")
