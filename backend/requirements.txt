@@ -11,3 +11,4 @@ websockets
 sqlalchemy
 requests
 langchain-openai
+pytest

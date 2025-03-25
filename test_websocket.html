@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SQL Matic WebSocket Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #messages { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: auto; margin-bottom: 10px; }
+        input, button { padding: 5px; margin-right: 5px; }
+        #thread-id, #agent-id { width: 200px; }
+        #user-id { width: 150px; }
+        #message { width: 400px; }
+        .user { color: blue; }
+        .assistant { color: green; }
+        .system { color: gray; font-style: italic; }
+        .error { color: red; }
+        
+        /* Metrics styling */
+        #metrics-container {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+        }
+        .metrics-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-gap: 10px;
+        }
+        .metric-group {
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            border-radius: 3px;
+            background-color: white;
+        }
+        .metric-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        .metric-value {
+            font-weight: bold;
+            color: #212529;
+        }
+        /* Tool usage section */
+        .tool-usage {
+            margin-top: 10px;
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 3px;
+            background-color: #f8f9fa;
+        }
+        .tool-item {
+            margin-top: 5px;
+            font-size: 0.85rem;
+        }
+        .tool-name {
+            display: inline-block;
+            padding: 2px 6px;
+            background-color: #e9ecef;
+            border-radius: 3px;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>SQL Matic WebSocket Test</h1>
+    
+    <div>
+        <label for="thread-id">Thread ID:</label>
+        <input type="text" id="thread-id" placeholder="Enter thread ID or leave empty for new thread">
+        
+        <label for="user-id">User ID:</label>
+        <input type="text" id="user-id" value="test_user">
+        
+        <label for="agent-id">Agent ID (optional):</label>
+        <input type="text" id="agent-id" placeholder="Optional agent ID">
+        
+        <button onclick="connectWebSocket()">Connect</button>
+        <button onclick="disconnectWebSocket()">Disconnect</button>
+    </div>
+    
+    <div id="connection-status">Not connected</div>
+    
+    <h2>Messages</h2>
+    <div id="messages"></div>
+    
+    <div>
+        <input type="text" id="message" placeholder="Type your message here...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    
+    <!-- Metrics Display Section -->
+    <div id="metrics-container">
+        <div class="metrics-title">Metrics</div>
+        <div class="metrics-grid">
+            <div class="metric-group">
+                <div class="metric-label">Token Usage</div>
+                <div id="token-usage" class="metric-value">Prompt: 0 | Completion: 0 | Total: 0</div>
+            </div>
+            <div class="metric-group">
+                <div class="metric-label">Performance</div>
+                <div id="performance" class="metric-value">Total: 0ms | LLM: 0ms</div>
+            </div>
+            <div class="metric-group">
+                <div class="metric-label">Tool Calls</div>
+                <div id="tool-total" class="metric-value">Total Calls: 0</div>
+            </div>
+        </div>
+        
+        <!-- Tool Usage Section -->
+        <div class="tool-usage">
+            <div class="metrics-title">Last Tool Used</div>
+            <div id="last-tool" class="tool-item">None</div>
+        </div>
+    </div>
+    
+    <script>
+        let socket;
+        let threadId;
+        let currentMessageId = null;
+        // Add tracking for displayed messages to prevent duplicates
+        let displayedMessages = new Set();
+        let displayedToolCalls = new Set();
+        
+        function connectWebSocket() {
+            // Close existing connection if any
+            if (socket) {
+                socket.close();
+            }
+            
+            // Get thread ID from input or generate a random one
+            threadId = document.getElementById('thread-id').value;
+            if (!threadId) {
+                threadId = 'thread-' + Math.random().toString(36).substr(2, 9);
+                document.getElementById('thread-id').value = threadId;
+            }
+            
+            // Connect to WebSocket
+            const clientId = 'client-' + Math.random().toString(36).substr(2, 9);
+            socket = new WebSocket(`ws://localhost:8000/ws/${clientId}`);
+            
+            socket.onopen = function(e) {
+                document.getElementById('connection-status').innerText = 'Connected';
+                document.getElementById('connection-status').style.color = 'green';
+                addMessage('system', `Connected to thread: ${threadId}`);
+                resetMetrics();
+                
+                // Clear message tracking on new connection
+                displayedMessages.clear();
+                displayedToolCalls.clear();
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Received:', data);
+                
+                if (data.type === 'chat_message') {
+                    const message = data.payload.message;
+                    
+                    // Create a message identifier based on role and content
+                    const messageId = `${message.role}:${message.content}`;
+                    
+                    // Only display if we haven't already shown this message
+                    if (!displayedMessages.has(messageId)) {
+                        if (message.role === 'user') {
+                            // Skip - we already added the user message on the client side
+                            // Just mark it as displayed
+                            displayedMessages.add(messageId);
+                        }
+                    }
+                } else if (data.type === 'token_stream') {
+                    const { token, message_id, is_complete } = data.payload;
+                    
+                    if (is_complete) {
+                        // Mark streaming as complete - we're done with this message
+                        completeStreamingMessage(message_id);
+                    } else {
+                        // Update the streaming message with the new token
+                        updateStreamingMessage(token, message_id);
+                    }
+                } else if (data.type === 'typing_indicator') {
+                    if (data.payload.isTyping) {
+                        // Prevent duplicate typing indicators
+                        if (!document.getElementById('typing-indicator')) {
+                            addMessage('system', 'Assistant is typing...', 'typing-indicator');
+                        }
+                    } else {
+                        removeElement('typing-indicator');
+                    }
+                } else if (data.type === 'error') {
+                    addMessage('error', data.payload.message);
+                } else if (data.type === 'tool_calls') {
+                    // Create a unique ID for the tool call based on content
+                    const toolCallId = JSON.stringify(data.payload.tool_calls);
+                    
+                    // Only display if we haven't shown this tool call before
+                    if (!displayedToolCalls.has(toolCallId)) {
+                        addMessage('system', `Using tool: ${JSON.stringify(data.payload.tool_calls)}`);
+                        displayedToolCalls.add(toolCallId);
+                    }
+                } else if (data.type === 'metrics') {
+                    // Update metrics display with received data
+                    updateMetricsDisplay(data.payload);
+                }
+            };
+            
+            socket.onclose = function(event) {
+                if (event.wasClean) {
+                    document.getElementById('connection-status').innerText = 'Disconnected';
+                } else {
+                    document.getElementById('connection-status').innerText = 'Connection lost';
+                    document.getElementById('connection-status').style.color = 'red';
+                }
+            };
+            
+            socket.onerror = function(error) {
+                document.getElementById('connection-status').innerText = 'Error: ' + error.message;
+                document.getElementById('connection-status').style.color = 'red';
+            };
+        }
+        
+        function disconnectWebSocket() {
+            if (socket) {
+                socket.close();
+                document.getElementById('connection-status').innerText = 'Disconnected';
+                document.getElementById('connection-status').style.color = 'black';
+            }
+        }
+        
+        function updateStreamingMessage(token, messageId) {
+            // If this is a new message ID or we don't have a current streaming message
+            if (messageId !== currentMessageId || !document.getElementById('streaming-' + messageId)) {
+                currentMessageId = messageId;
+                
+                // Create a new streaming message element
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'assistant';
+                messageDiv.id = 'streaming-' + messageId;
+                messageDiv.innerHTML = '<strong>Assistant:</strong> ' + token;
+                document.getElementById('messages').appendChild(messageDiv);
+            } else {
+                // Append to existing streaming message
+                document.getElementById('streaming-' + messageId).innerHTML += token;
+            }
+            
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+        
+        function completeStreamingMessage(messageId) {
+            // Just mark as complete - the message is already in the UI from streaming
+            currentMessageId = null;
+        }
+        
+        function addMessage(role, content, id = null) {
+            // Create a message identifier
+            const messageId = `${role}:${content}`;
+            
+            // Skip if we've already displayed this message
+            if (displayedMessages.has(messageId) && role !== 'system') {
+                return;
+            }
+            
+            // Mark as displayed
+            displayedMessages.add(messageId);
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = role;
+            if (id) messageDiv.id = id;
+            
+            let sender;
+            switch (role) {
+                case 'user': sender = 'You'; break;
+                case 'assistant': sender = 'Assistant'; break;
+                case 'system': sender = 'System'; break;
+                case 'error': sender = 'Error'; break;
+                default: sender = role;
+            }
+            
+            messageDiv.innerHTML = `<strong>${sender}:</strong> ${content}`;
+            document.getElementById('messages').appendChild(messageDiv);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+        
+        function removeElement(id) {
+            const element = document.getElementById(id);
+            if (element) element.remove();
+        }
+        
+        function resetMetrics() {
+            document.getElementById('token-usage').textContent = 'Prompt: 0 | Completion: 0 | Total: 0';
+            document.getElementById('performance').textContent = 'Total: 0ms | LLM: 0ms';
+            document.getElementById('tool-total').textContent = 'Total Calls: 0';
+            document.getElementById('last-tool').textContent = 'None';
+        }
+        
+        function updateMetricsDisplay(metrics) {
+            console.log('Updating metrics:', metrics);
+            
+            if (!metrics) return;
+            
+            // Update token usage metrics
+            if (metrics.tokenUsage) {
+                const tokenUsage = metrics.tokenUsage;
+                document.getElementById('token-usage').textContent = 
+                    `Prompt: ${tokenUsage.prompt || 0} | ` +
+                    `Completion: ${tokenUsage.completion || 0} | ` +
+                    `Total: ${tokenUsage.total || 0}`;
+            }
+            
+            // Update performance metrics
+            if (metrics.performance) {
+                const performance = metrics.performance;
+                const totalTime = Math.round(performance.totalTime || 0);
+                const llmTime = Math.round(performance.llmTime || 0);
+                
+                document.getElementById('performance').textContent = 
+                    `Total: ${totalTime}ms | ` +
+                    `LLM: ${llmTime}ms`;
+            }
+            
+            // Update tool usage metrics
+            if (metrics.toolUsage) {
+                const toolUsage = metrics.toolUsage;
+                document.getElementById('tool-total').textContent = 
+                    `Total Calls: ${toolUsage.totalCalls || 0}`;
+                
+                // Update last used tool
+                if (toolUsage.lastUsed) {
+                    const lastTool = toolUsage.lastUsed;
+                    let args = '';
+                    
+                    // Format arguments for display
+                    if (lastTool.args) {
+                        try {
+                            if (typeof lastTool.args === 'string') {
+                                args = lastTool.args.length > 30 ? 
+                                    lastTool.args.substring(0, 30) + '...' : 
+                                    lastTool.args;
+                            } else {
+                                const argsStr = JSON.stringify(lastTool.args);
+                                args = argsStr.length > 30 ? 
+                                    argsStr.substring(0, 30) + '...' : 
+                                    argsStr;
+                            }
+                        } catch (e) {
+                            args = '[complex args]';
+                        }
+                    }
+                    
+                    document.getElementById('last-tool').innerHTML = 
+                        `<span class="tool-name">${lastTool.name}</span> ${args}`;
+                } else {
+                    document.getElementById('last-tool').textContent = 'None';
+                }
+            }
+        }
+        
+        function sendMessage() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                alert('Please connect to a WebSocket first');
+                return;
+            }
+            
+            const messageInput = document.getElementById('message');
+            const message = messageInput.value.trim();
+            const userId = document.getElementById('user-id').value;
+            const agentId = document.getElementById('agent-id').value;
+            
+            if (!message) {
+                alert('Please enter a message');
+                return;
+            }
+            
+            // Reset metrics when sending a new message
+            resetMetrics();
+            
+            // Reset message tracking for new conversation turn
+            displayedToolCalls.clear();
+            
+            // Add user message to UI and track it
+            const messageId = `user:${message}`;
+            if (!displayedMessages.has(messageId)) {
+                addMessage('user', message);
+                // The addMessage function will add it to displayedMessages
+            }
+            
+            // Prepare proper payload based on the structure expected by the server
+            const payload = {
+                message: message,
+                thread_id: threadId,
+                user_id: userId
+            };
+            
+            // Add optional agent_id if provided
+            if (agentId) {
+                payload.agent_id = agentId;
+            }
+            
+            // Send message through WebSocket
+            socket.send(JSON.stringify({
+                type: 'chat_message',
+                payload: payload
+            }));
+            
+            // Clear input
+            messageInput.value = '';
+        }
+        
+        // Allow sending messages with Enter key
+        document.getElementById('message').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
