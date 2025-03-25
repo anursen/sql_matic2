@@ -15,7 +15,7 @@ from models.data_models import GetSqliteSchemaRequest, GetSqliteSchemaResponse, 
 
 
 @tool(args_schema=GetSqliteSchemaRequest)
-def get_sqlite_schema(table_count: int = 0) -> GetSqliteSchemaResponse:
+def sqllite_get_schema(table_count: int = 0) -> GetSqliteSchemaResponse:
     """
     Extracts the complete schema information from a SQLite database.
     
