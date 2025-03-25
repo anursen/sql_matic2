@@ -41,3 +41,14 @@ Keep documentation updated when code changes
 7. Test
 All functions should have test case
 Test Coverage should be over %70 
+
+8. Hardcoded Variables
+Avoid Hardcoded Values:
+- Store all configuration values in config.yaml
+- Access variables through config.py
+- This includes:
+    - Database connections
+    - API endpoints
+    - Timeouts
+    - Environment-specific values
+    - Feature flags

@@ -23,7 +23,7 @@ from utils.logger import get_logger
 tools_logger = get_logger("tools")
 
 @tool(args_schema=SqliteGetMetadataArgs)
-def sqllite_get_metadata(table_count: int) -> Dict[str, Any]:
+def sqlite_get_metadata(table_count: int) -> Dict[str, Any]:
     """
     Returns metadata about a SQLite database including table sizes, row counts,
     and other statistics without duplicating schema information.
@@ -243,7 +243,7 @@ def sqllite_get_metadata(table_count: int) -> Dict[str, Any]:
 
 def main():
 
-    result = get_sqlite_metadata.invoke({"table_count": 0})
+    result = sqlite_get_metadata.invoke({"table_count": 0})
     import pprint
     pprint.pprint(result)
 if __name__ == "__main__":

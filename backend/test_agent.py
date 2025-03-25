@@ -12,7 +12,20 @@ def test_basic_message():
     print("\n=== Testing Basic Message ===")
     
     # Import the agent singleton here to avoid circular imports
-    from backend.services.agent_service import sql_agent
+    from backend.services.agent_service import agent_service
+    
+    # Print agent configuration details
+    agent = agent_service.active_agent
+    if agent:
+        print(f"Using agent: {agent.name} ({agent.agent_type})")
+        print(f"Tools available: {', '.join([tool.name for tool in agent.tools])}")
+        
+        # Check if system message was used for agent creation
+        agent_config = agent_service.config.get_section("agent")
+        if agent_config and "types" in agent_config:
+            agent_type_config = agent_config["types"].get(agent.agent_type, {})
+            if "system_message" in agent_type_config:
+                print("Agent has system message configured")
     
     # Generate a unique thread ID and user ID for this test
     thread_id = str(uuid.uuid4())
@@ -24,13 +37,13 @@ def test_basic_message():
     
     # Measure response time
     start_time = time.time()
-    response = sql_agent.send_message(message, thread_id, user_id)
+    response = agent_service.send_message(message, thread_id, user_id)
     elapsed_time = time.time() - start_time
     
     print(f"Response received in {elapsed_time:.2f} seconds:")
     print(f"Response text: {response.text}")
     print("\nThread:")
-    thread = sql_agent.get_thread(thread_id)
+    thread = agent_service.get_thread(thread_id)
     for msg in thread.messages:
         print(f"- [{msg.sender}]: {msg.text[:100]}..." if len(msg.text) > 100 else f"- [{msg.sender}]: {msg.text}")
     
@@ -44,7 +57,7 @@ def test_follow_up_message(thread_id, user_id):
     print("\n=== Testing Follow-up Message ===")
     
     # Import the agent singleton here to avoid circular imports
-    from backend.services.agent_service import sql_agent
+    from backend.services.agent_service import agent_service
     
     # Send a follow-up message that references the previous conversation
     message = "Can you show me the structure of the users table?"
@@ -52,13 +65,13 @@ def test_follow_up_message(thread_id, user_id):
     
     # Measure response time
     start_time = time.time()
-    response = sql_agent.send_message(message, thread_id, user_id)
+    response = agent_service.send_message(message, thread_id, user_id)
     elapsed_time = time.time() - start_time
     
     print(f"Response received in {elapsed_time:.2f} seconds:")
     print(f"Response text: {response.text}")
     print("\nThread:")
-    thread = sql_agent.get_thread(thread_id)
+    thread = agent_service.get_thread(thread_id)
     for msg in thread.messages:
         print(f"- [{msg.sender}]: {msg.text[:100]}..." if len(msg.text) > 100 else f"- [{msg.sender}]: {msg.text}")
     
@@ -70,7 +83,7 @@ def test_streaming_message():
     print("\n=== Testing Streaming Message ===")
     
     # Import the agent singleton here to avoid circular imports
-    from backend.services.agent_service import sql_agent
+    from backend.services.agent_service import agent_service
     
     # Generate a unique thread ID and user ID for this test
     thread_id = str(uuid.uuid4())
@@ -82,7 +95,7 @@ def test_streaming_message():
     
     # Stream the response
     print("\nResponse stream:")
-    for event_type, data in sql_agent.stream_message(message, thread_id, user_id):
+    for event_type, data in agent_service.stream_message(message, thread_id, user_id):
         if event_type == "message":
             print(f"  Message chunk: {data['text'][:50]}..." if len(data['text']) > 50 else f"  Message chunk: {data['text']}")
         elif event_type == "typing":
@@ -92,7 +105,7 @@ def test_streaming_message():
     
     # Get the final thread
     print("\nFinal Thread:")
-    thread = sql_agent.get_thread(thread_id)
+    thread = agent_service.get_thread(thread_id)
     for msg in thread.messages:
         print(f"- [{msg.sender}]: {msg.text[:100]}..." if len(msg.text) > 100 else f"- [{msg.sender}]: {msg.text}")
 
@@ -101,7 +114,7 @@ def test_thread_management():
     print("\n=== Testing Thread Management ===")
     
     # Import the agent singleton here to avoid circular imports
-    from backend.services.agent_service import sql_agent
+    from backend.services.agent_service import agent_service
     
     # Create some test threads
     threads = []
@@ -109,28 +122,28 @@ def test_thread_management():
         thread_id = str(uuid.uuid4())
         user_id = f"test_user_{i+1}"
         message = f"This is test message {i+1}"
-        sql_agent.send_message(message, thread_id, user_id)
+        agent_service.send_message(message, thread_id, user_id)
         threads.append((thread_id, user_id))
     
     # List all threads
-    all_threads = sql_agent.get_threads()
+    all_threads = agent_service.get_threads()
     print(f"Total threads: {len(all_threads)}")
     
     # Get threads for a specific user
-    user_threads = sql_agent.get_threads(threads[0][1])
+    user_threads = agent_service.get_threads(threads[0][1])
     print(f"Threads for user {threads[0][1]}: {len(user_threads)}")
     
     # Delete a thread
     thread_to_delete = threads[0][0]
-    success = sql_agent.delete_thread(thread_to_delete)
+    success = agent_service.delete_thread(thread_to_delete)
     print(f"Deleted thread {thread_to_delete}: {success}")
     
     # Verify thread was deleted
-    remaining_threads = sql_agent.get_threads()
+    remaining_threads = agent_service.get_threads()
     print(f"Remaining threads: {len(remaining_threads)}")
     
     # Try to get the deleted thread
-    deleted_thread = sql_agent.get_thread(thread_to_delete)
+    deleted_thread = agent_service.get_thread(thread_to_delete)
     print(f"Accessing deleted thread returns: {deleted_thread}")
 
 if __name__ == "__main__":
@@ -138,7 +151,7 @@ if __name__ == "__main__":
     print("==============")
     
     # Import the agent singleton
-    from backend.services.agent_service import sql_agent
+    from backend.services.agent_service import agent_service
     
     # Test sending a basic message
     thread_id, user_id = test_basic_message()

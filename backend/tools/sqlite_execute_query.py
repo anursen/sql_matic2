@@ -117,7 +117,7 @@ def parse_multiple_queries(query_str: str) -> List[str]:
     return queries
 
 @tool(args_schema=ExecuteSqliteQuery)
-def sqllite_execute_query(query: str, ):
+def sqlite_execute_query(query: str, ):
     """
     Executes a SQLite query on the specified database file or the configured default and returns the results.
     Support for SELECT, INSERT, UPDATE, DELETE, and other SQL operations.
@@ -304,7 +304,7 @@ if __name__ == "__main__":
                 break
                 
             
-            result = execute_sqlite_query.invoke({'query': query})
+            result = sqlite_execute_query.invoke({'query': query})
             print(result)
     
     # Run the tester

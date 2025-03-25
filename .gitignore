@@ -56,3 +56,13 @@ user_files/
 sample_code/
 *.ipynb_checkpoints
 *.ipynb
+
+documents/
+*.pdf
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.xlsx
+*.xls
+*.csv

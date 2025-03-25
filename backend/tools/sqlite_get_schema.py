@@ -15,7 +15,7 @@ from models.data_models import GetSqliteSchemaRequest, GetSqliteSchemaResponse, 
 
 
 @tool(args_schema=GetSqliteSchemaRequest)
-def sqllite_get_schema(table_count: int = 0) -> GetSqliteSchemaResponse:
+def sqlite_get_schema(table_count: int = 0) -> GetSqliteSchemaResponse:
     """
     Extracts the complete schema information from a SQLite database.
     
@@ -93,14 +93,14 @@ def sqllite_get_schema(table_count: int = 0) -> GetSqliteSchemaResponse:
     except Exception as e:
         logger.error(f"Error extracting SQLite schema: {str(e)}")
         return GetSqliteSchemaResponse(
-            database_path=config.get("query_db", "path", fallback="unknown"),
+            database_path=config.get("query_db", "path"),
             error=str(e)
         )
 
 
 if __name__ == "__main__":
     # Example standalone usage
-    result = get_sqlite_schema.invoke({'table_count':0})  # Change table_count as needed
+    result = sqlite_get_schema.invoke({'table_count':0})  # Change table_count as needed
     
     # Print the schema in the requested format
     for table in result.tables:

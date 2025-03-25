@@ -1,24 +1,31 @@
 import os
 import sys
-from typing import List, Dict
+import json
+from typing import List, Dict, Any, Optional
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 # Add the parent directory to sys.path to make backend package importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-
 from backend.services.agent_service import agent_service
 from backend.utils import logger
 from backend.api import router as api_router
 from backend.config.config import config
+from backend.utils.logger import get_logger
 
-# Initialize FastAPI app
-app = FastAPI(title="SQL Matic API")
+logger = get_logger(__name__)
 
-# Add CORS middleware
-origins = ["*"]  # Update with your frontend URL in production
+# Create FastAPI app
+app = FastAPI(
+    title="SQL Matic API",
+    description="SQL_Matic Backend API",
+    version="1.0.0"
+)
+
+# Configure CORS
+origins = config.get_section("cors").get("origins", ["*"])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -27,20 +34,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routes
+# Include routers
 app.include_router(api_router, prefix="/api")
 
-# Add a health check endpoint for testing
+@app.get("/")
+async def root():
+    """Root endpoint that returns service info."""
+    return {"message": "SQL Matic API is running"}
+
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for testing the API is running"""
-    return {
-        "status": "ok",
-        "version": "1.0",
-        "database": config.get("query_db", "path", "not configured")
-    }
+    """Health check endpoint."""
+    return {"status": "healthy"}
 
-# Add a tools check endpoint to verify loaded tools
 @app.get("/tools")
 async def list_tools():
     """List all loaded tools in the active agent"""
@@ -53,7 +59,6 @@ async def list_tools():
         "tools": tools
     }
 
-# Add an agent info endpoint
 @app.get("/agent")
 async def get_agent_info():
     """Get information about the active agent"""
@@ -72,72 +77,87 @@ async def get_agent_info():
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[str, List[WebSocket]] = {}
+        self.active_connections: Dict[str, WebSocket] = {}
 
-    async def connect(self, websocket: WebSocket, thread_id: str):
+    async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
-        if thread_id not in self.active_connections:
-            self.active_connections[thread_id] = []
-        self.active_connections[thread_id].append(websocket)
-        logger.info(f"Client connected to thread {thread_id}. Active connections: {len(self.active_connections)}")
+        self.active_connections[client_id] = websocket
 
-    def disconnect(self, websocket: WebSocket, thread_id: str):
-        if thread_id in self.active_connections:
-            if websocket in self.active_connections[thread_id]:
-                self.active_connections[thread_id].remove(websocket)
-            if not self.active_connections[thread_id]:
-                del self.active_connections[thread_id]
-        logger.info(f"Client disconnected from thread {thread_id}. Active connections: {len(self.active_connections)}")
+    def disconnect(self, client_id: str):
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
 
-    async def broadcast(self, thread_id: str, event_type: str, data: dict):
-        if thread_id in self.active_connections:
-            message = {
-                "type": event_type,
-                "data": data
-            }
-            for connection in self.active_connections[thread_id]:
-                await connection.send_json(message)
+    async def send_json(self, client_id: str, data: Any):
+        if client_id in self.active_connections:
+            await self.active_connections[client_id].send_json(data)
 
-# Create connection manager instance
-connection_manager = ConnectionManager()
+manager = ConnectionManager()
 
-@app.websocket("/ws/{thread_id}")
-async def websocket_endpoint(websocket: WebSocket, thread_id: str):
-    await connection_manager.connect(websocket, thread_id)
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    await manager.connect(websocket, client_id)
+    logger.info("connection open")
     try:
         while True:
-            data = await websocket.receive_json()
+            data = await websocket.receive_text()
+            message_data = json.loads(data)
             
-            # Handle different message types
-            if data["type"] == "chat_message":
-                # Process the message using the agent
-                user_message = data["data"]["message"]
-                user_id = data["data"]["user_id"]
-                system_message = data["data"].get("system_message")
+            # Extract message details
+            message_type = message_data.get("type")
+            payload = message_data.get("payload", {})
+            
+            if message_type == "chat_message":
+                # The structure seems to be different from what we expected
+                # Check both direct message and nested data structure
+                if "message" in payload:
+                    user_message = payload.get("message", "")
+                elif "data" in message_data and "message" in message_data["data"]:
+                    user_message = message_data["data"]["message"]
+                else:
+                    user_message = ""
                 
-                # Send typing indicator
-                await connection_manager.broadcast(
-                    thread_id, 
-                    "typing_indicator", 
-                    {"isTyping": True}
-                )
+                thread_id = payload.get("thread_id", "")
+                user_id = payload.get("user_id", "")
+                agent_id = payload.get("agent_id")  # Optional agent ID
+                
+                # Validate message is not empty
+                if not user_message or user_message.strip() == "":
+                    logger.warning(f"Empty message received from client {client_id}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "payload": {"message": "Please provide a message. Empty messages cannot be processed."}
+                    })
+                    continue
+                
+                logger.info(f"Processing message from {user_id}: '{user_message[:50]}...'") if len(user_message) > 50 else logger.info(f"Processing message from {user_id}: '{user_message}'")
                 
                 # Stream the response
                 for event_type, event_data in agent_service.stream_message(
                     message_text=user_message,
                     thread_id=thread_id,
                     user_id=user_id,
-                    system_message=system_message
+                    agent_id=agent_id
                 ):
-                    await connection_manager.broadcast(thread_id, event_type, event_data)
-    
+                    await websocket.send_json({
+                        "type": event_type,
+                        "payload": event_data
+                    })
+            
+            
     except WebSocketDisconnect:
-        connection_manager.disconnect(websocket, thread_id)
+        manager.disconnect(client_id)
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "payload": {"message": f"Error: {str(e)}"}
+            })
+        except:
+            pass
+        manager.disconnect(client_id)
 
 if __name__ == "__main__":
-    # Get port from environment variables or use default
-    port = int(os.environ.get("PORT", 8000))
-    
-    # Run the application
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=True)
+    port = config.get("app", "port", 8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
 
