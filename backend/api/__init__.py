@@ -1,12 +1,6 @@
 from fastapi import APIRouter
 
-# Create a router for all API endpoints
-router = APIRouter()
+# Import the router directly from routes.py instead of creating a new one
+from .routes import router
 
-# Import and include all route modules
-from backend.api.chat_routes import router as chat_router
-from .agent_routes import router as agent_router
 
-# Include all routers
-router.include_router(chat_router)
-router.include_router(agent_router, prefix="/agent")

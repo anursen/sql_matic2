@@ -52,6 +52,7 @@ htmlcov/
 user_files/
 *.sqlite3
 *.db
+*.sqlite
 
 sample_code/
 *.ipynb_checkpoints

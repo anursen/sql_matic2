@@ -7,6 +7,7 @@ import rehypeRaw from 'rehype-raw';
 import { useUser } from '../contexts/UserContext';
 import Metrics from './Metrics';
 import '../styles/ChatUI.css';
+import DBStructure from './DBStructure';
 
 const ChatUI = () => {
   const { user } = useUser();
@@ -397,8 +398,13 @@ const ChatUI = () => {
         </div>
       </div>
       
-      {/* Add the Metrics component */}
-      <Metrics metrics={metrics} resetMetrics={resetMetrics} />
+      <div className="right-sidebar">
+        {/* Add the Metrics component */}
+        <Metrics metrics={metrics} resetMetrics={resetMetrics} />
+        
+        {/* Add the DB Structure component */}
+        <DBStructure />
+      </div>
     </div>
   );
 };

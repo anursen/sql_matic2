@@ -10,6 +10,7 @@ app:
 # Database settings for application
 database:
   path: "sample.db"
+  use_as_chat_memory: true
   pool_size: 5
   timeout: 30
   type: sqlite

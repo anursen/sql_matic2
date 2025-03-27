@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useUser } from '../contexts/UserContext';
-import '../styles/LoginScreen.css';
+import '../styles/components/login.css';
 
 const LoginScreen = () => {
   const [username, setUsername] = useState('');

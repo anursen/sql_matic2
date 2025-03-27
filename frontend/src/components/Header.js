@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useUser } from '../contexts/UserContext';
-import '../styles/Header.css';
+import '../styles/components/header.css';
 
 const Header = () => {
   const { user, logout } = useUser();

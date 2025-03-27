@@ -473,10 +473,10 @@ class AgentService:
             query_count = 0
             rows_returned = 0
             
-            logger.info(f"Streaming with agent_executor using messages: {messages}")
+            #logger.info(f"Streaming with agent_executor using messages: {messages}")
             # Use the stream method with "values" as shown in agents.ipynb
             for step in agent.agent_executor.stream(agent_input, config, stream_mode="values"):
-                logger.info(f"Stream step: {step}")
+                #logger.info(f"Stream step: {step}")
                 if "messages" in step and step["messages"]:
                     message = step["messages"][-1]
                     

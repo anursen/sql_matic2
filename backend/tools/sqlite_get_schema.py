@@ -97,8 +97,6 @@ def sqlite_get_schema(table_count: int = 0) -> GetSqliteSchemaResponse:
             error=str(e)
         )
 
-
-if __name__ == "__main__":
     # Example standalone usage
     result = sqlite_get_schema.invoke({'table_count':0})  # Change table_count as needed
     

@@ -334,3 +334,33 @@ class WebSocketConnectionInfo(BaseModel):
     thread_id: Optional[str] = Field(None, description="Thread identifier")
     agent_id: Optional[str] = Field(None, description="Agent identifier")
     connected_at: datetime = Field(default_factory=datetime.now, description="Connection time")
+
+# Models for SQLite schema endpoint
+
+class SchemaColumnInfo(BaseModel):
+    """Column information from SQLite schema"""
+    name: str = Field(..., description="Name of the column")
+    type: str = Field(..., description="Data type of the column")
+    not_null: bool = Field(..., description="Whether the column has a NOT NULL constraint")
+    default_value: Optional[str] = Field(None, description="Default value of the column if any")
+    is_primary_key: bool = Field(False, description="Whether the column is part of the primary key")
+    is_foreign_key: bool = Field(False, description="Whether the column is a foreign key")
+    references: Optional[Dict[str, Any]] = Field(None, description="Foreign key reference information")
+
+class SchemaIndexInfo(BaseModel):
+    """Index information from SQLite schema"""
+    name: str = Field(..., description="Name of the index")
+    unique: bool = Field(False, description="Whether the index is unique")
+    columns: List[str] = Field(..., description="Names of columns included in the index")
+
+class SchemaTableInfo(BaseModel):
+    """Table information from SQLite schema"""
+    table_name: str = Field(..., description="Name of the table")
+    columns: List[SchemaColumnInfo] = Field(default_factory=list, description="List of columns in the table")
+    indices: Optional[List[SchemaIndexInfo]] = Field(default_factory=list, description="List of indices on the table")
+
+class SQLiteSchemaAllResponse(BaseModel):
+    """Response model for SQLite schema information"""
+    tables: List[SchemaTableInfo] = Field(default_factory=list, description="List of tables in the database")
+    database_path: str = Field(..., description="Path to the SQLite database")
+    error: Optional[str] = Field(None, description="Error message if an error occurred")

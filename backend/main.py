@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 # Create FastAPI app
 app = FastAPI(
     title="SQL Matic API",
-    description="SQL_Matic Backend API",
+    description="Backend API for SQL Matic application",
     version="1.0.0"
 )
 
